@@ -9,6 +9,15 @@ import anthropic
 import openai
 import google.generativeai as palm
 
+# langchain imports
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_ollama import ChatOllama
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.rate_limiters import InMemoryRateLimiter
+
 from google.api_core import retry
 from typing import List, Dict
 from datetime import datetime
@@ -172,6 +181,22 @@ MODELS = dict(
             "company": "anthropic",
             "model_class": "AnthropicModel",
             "model_name": "claude-instant-1.1",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "langchain/anthropic/claude-3-5-haiku": {
+            "company": "anthropic",
+            "model_class": "LangChainModel",
+            "model_name": "claude-3-5-haiku-20241022",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "langchain/openai/gpt-4o-mini": {
+            "company": "openai",
+            "model_class": "LangChainModel",
+            "model_name": "gpt-4o-mini",
             "8bit": None,
             "likelihood_access": False,
             "endpoint": None,
@@ -757,6 +782,129 @@ class OpenAIModel(LanguageModel):
 
         return result
 
+# ----------------------------------------------------------------------------------------------------------------------
+# LangChain Wrapper
+# ----------------------------------------------------------------------------------------------------------------------
+
+
+class LangChainModel(LanguageModel):
+    """LangChain API Wrapper for Chat Models with API key integration."""
+
+    def __init__(self, model_name: str):
+        super().__init__(model_name)
+        
+        # Initialize the LangChain client based on the model name.
+        if model_name.startswith("langchain/openai/"):
+            rate_limiter = InMemoryRateLimiter(
+                requests_per_second=100,
+                check_every_n_seconds=0.1,
+                max_bucket_size=10,
+            )
+            # Retrieve the OpenAI API key
+            openai_api_key = get_api_key("openai")
+            self.client = ChatOpenAI(
+                model_name=self._model_name,  # use model name from MODELS
+                # rate_limiter=rate_limiter,
+                openai_api_key=openai_api_key,
+            )
+        elif model_name.startswith("langchain/anthropic/"):
+            rate_limiter = InMemoryRateLimiter(
+                requests_per_second=10,
+                check_every_n_seconds=0.1,
+                max_bucket_size=5,
+            )
+            # Retrieve the Anthropic API key
+            anthropic_api_key = get_api_key("anthropic")
+            self.client = ChatAnthropic(
+                model_name=self._model_name,  # Or use self._model_name if stored in MODELS
+                rate_limiter=rate_limiter,
+                anthropic_api_key=anthropic_api_key,
+            )
+        elif model_name == "gemini":
+            rate_limiter = InMemoryRateLimiter(
+                requests_per_second=0.2,  # ~15 requests per minute
+                check_every_n_seconds=0.1,
+                max_bucket_size=20,
+            )
+            # Retrieve the Google Generative AI API key
+            google_api_key = get_api_key("google")
+            self.client = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash",
+                rate_limiter=rate_limiter,
+                api_key=google_api_key,
+            )
+        elif model_name == "llama2":
+            rate_limiter = InMemoryRateLimiter(
+                requests_per_second=0.2,  # ~15 requests per minute
+                check_every_n_seconds=0.1,
+                max_bucket_size=20,
+            )
+            # Retrieve the Ollama API key (if applicable)
+            ollama_api_key = get_api_key("ollama")
+            self.client = ChatOllama(
+                model="llama2:7b",
+                rate_limiter=rate_limiter,
+                api_key=ollama_api_key,
+            )
+        else:
+            raise ValueError(f"Unsupported model: {model_name}")
+
+    def get_greedy_answer(self, prompt_base: str, prompt_system: str, max_tokens: int) -> dict:
+        """
+        Gets a greedy (deterministic) answer by invoking sampling with temperature=0 and top_p=1.0.
+        Returns a dict containing the timestamp, the raw answer, and the processed answer.
+        """
+        return self.get_top_p_answer(
+            prompt_base=prompt_base,
+            prompt_system=prompt_system,
+            max_tokens=max_tokens,
+            temperature=0,
+            top_p=1.0,
+        )
+
+    def get_top_p_answer(
+        self,
+        prompt_base: str,
+        prompt_system: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+    ) -> dict:
+        """
+        Gets an answer using sampling (i.e. top_p sampling with temperature) from a LangChain chat model.
+        Constructs the messages as a system instruction plus a user prompt, invokes the model, and then
+        returns a dictionary with a timestamp, the raw answer, and a processed answer.
+        """
+        result = {"timestamp": get_timestamp()}
+
+        messages = [
+            SystemMessage(content=prompt_system),
+            HumanMessage(content=prompt_base),
+        ]
+        
+        # Invoke the model with the specified parameters.
+        response = self.client.invoke(
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
+
+        # Use a string output parser to extract the answer.
+        parser = StrOutputParser()
+        answer_raw = parser.invoke(response)
+        result["answer_raw"] = answer_raw
+
+        # Post-process the answer:
+        # Here we mimic the original post-processing by taking only the first line, if present.
+        if "\n" in answer_raw:
+            answer_processed = answer_raw.split("\n")[0].strip()
+        else:
+            answer_processed = answer_raw.strip()
+
+        result["answer"] = answer_processed
+
+        return result
 
 # ----------------------------------------------------------------------------------------------------------------------
 # ANTHROPIC MODEL WRAPPER
