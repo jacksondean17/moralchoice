@@ -39,7 +39,7 @@ path_results_raw = path_results + "_raw"
 results = []
 for path, subdirs, files in os.walk(path_results_raw):
     for name in files:
-        if name[:-7] == ".pickle":
+        if name.endswith(".pickle"):
             path_file = os.path.join(path, name)
 
         with open(path_file, "rb") as f:
