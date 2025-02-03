@@ -17,6 +17,10 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.rate_limiters import InMemoryRateLimiter
+from langchain_experimental.llms import ChatLlamaAPI
+from langchain_together import ChatTogether
+from llamaapi import LlamaAPI
+from together import Together
 
 from google.api_core import retry
 from typing import List, Dict
@@ -197,6 +201,62 @@ MODELS = dict(
             "company": "openai",
             "model_class": "LangChainModel",
             "model_name": "gpt-4o-mini",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "langchain/llamaapi/llama3.1-8b": {
+            "company": "meta",
+            "model_class": "LangChainModel",
+            "model_name": "llama3.1-8b",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "langchain/llamaapi/deepseek-v3": {
+            "company": "meta",
+            "model_class": "LangChainModel",
+            "model_name": "deepseek-v3",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "langchain/together/llama3.3-70b": {
+            "company": "meta",
+            "model_class": "LangChainModel",
+            "model_name": "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "langchain/together/llama3.2-3b": {
+            "company": "meta",
+            "model_class": "LangChainModel",
+            "model_name": "meta-llama/Llama-3.2-3B-Instruct-Turbo",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "langchain/google/gemini-1.5-flash-8b": {
+            "company": "google",
+            "model_class": "LangChainModel",
+            "model_name": "gemini-1.5-flash-8b",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "together/deepseek-ai/DeepSeek-V3": {
+            "company": "deepseek",
+            "model_class": "TogetherModel",
+            "model_name": "deepseek-ai/DeepSeek-V3",
+            "8bit": None,
+            "likelihood_access": False,
+            "endpoint": None,
+        },
+        "together/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo-128K": {
+            "company": "meta",
+            "model_class": "TogetherModel",
+            "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo-128K",
             "8bit": None,
             "likelihood_access": False,
             "endpoint": None,
@@ -820,7 +880,7 @@ class LangChainModel(LanguageModel):
                 rate_limiter=rate_limiter,
                 anthropic_api_key=anthropic_api_key,
             )
-        elif model_name == "gemini":
+        elif model_name.startswith("langchain/google/"):
             rate_limiter = InMemoryRateLimiter(
                 requests_per_second=0.2,  # ~15 requests per minute
                 check_every_n_seconds=0.1,
@@ -829,9 +889,19 @@ class LangChainModel(LanguageModel):
             # Retrieve the Google Generative AI API key
             google_api_key = get_api_key("google")
             self.client = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash",
-                rate_limiter=rate_limiter,
+                model=self._model_name,
+                # rate_limiter=rate_limiter,
                 api_key=google_api_key,
+                temperature=1.0
+            )
+        elif model_name.startswith("langchain/llamaapi/"):
+            # Retrieve llama API key
+            llama_api_key = get_api_key("llama")
+            llama = LlamaAPI(llama_api_key)
+            self.client = ChatLlamaAPI(
+                model_name=self._model_name,
+                api_key=llama_api_key,
+                client=llama
             )
         elif model_name == "llama2":
             rate_limiter = InMemoryRateLimiter(
@@ -845,6 +915,18 @@ class LangChainModel(LanguageModel):
                 model="llama2:7b",
                 rate_limiter=rate_limiter,
                 api_key=ollama_api_key,
+            )
+        elif model_name.startswith("langchain/together/"):
+            rate_limiter = InMemoryRateLimiter(
+                requests_per_second=10,  # 600 rpm
+                check_every_n_seconds=0.1,
+                max_bucket_size=10,
+            )
+            together_api_key = get_api_key("together")
+            self.client = ChatTogether(
+                rate_limiter=rate_limiter,
+                model = self._model_name,
+                api_key = together_api_key,
             )
         else:
             raise ValueError(f"Unsupported model: {model_name}")
@@ -882,13 +964,19 @@ class LangChainModel(LanguageModel):
             HumanMessage(content=prompt_base),
         ]
         
-        # Invoke the model with the specified parameters.
-        response = self.client.invoke(
-            messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-        )
+        if (self._company == 'google'):
+            # Google models don't take max_tokens
+            response = self.client.invoke(
+                messages,
+            )
+        else:
+            # Invoke the model with the specified parameters.
+            response = self.client.invoke(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            )
 
         # Use a string output parser to extract the answer.
         parser = StrOutputParser()
@@ -902,6 +990,109 @@ class LangChainModel(LanguageModel):
         else:
             answer_processed = answer_raw.strip()
 
+        result["answer"] = answer_processed
+
+        return result
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Together Wrapper
+# ----------------------------------------------------------------------------------------------------------------------
+
+class TogetherModel(LanguageModel):
+    """Together API Wrapper for Chat Models with API key integration."""
+
+    def __init__(self, model_name: str):
+        """
+        Initialize the TogetherModel.
+        
+        The model_name (e.g. "deepseek-ai/DeepSeek-V3") is used both to verify support
+        (via the LanguageModel superclass) and to pass to the Together API.
+        """
+        super().__init__(model_name)
+        
+        # Retrieve the Together API key if needed. Depending on the Together API,
+        # this may be optional. Adjust the provider string as appropriate.
+        together_api_key = get_api_key("together")
+        self.client = Together(api_key=together_api_key)
+    
+    def get_greedy_answer(self, prompt_base: str, prompt_system: str, max_tokens: int) -> dict:
+        """
+        Gets a greedy (deterministic) answer by calling get_top_p_answer with temperature=0 and top_p=1.0.
+        Returns:
+            dict: A dictionary containing a timestamp, the raw answer, and a processed answer.
+        """
+        return self.get_top_p_answer(
+            prompt_base=prompt_base,
+            prompt_system=prompt_system,
+            max_tokens=max_tokens,
+            temperature=0,
+            top_p=1.0,
+        )
+    
+    def get_top_p_answer(
+        self,
+        prompt_base: str,
+        prompt_system: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+    ) -> dict:
+        """
+        Gets an answer using sampling (top_p and temperature) from the Together API.
+        
+        Constructs the messages as a system instruction plus a user prompt, then sends the request
+        (with stream=False) to the Together API. The method returns a dictionary with:
+        
+            - "timestamp": when the call was made,
+            - "answer_raw": the full raw text of the answer, and
+            - "answer": a processed version (for example, only the first line).
+        
+        Returns:
+            dict: The result dictionary with keys "timestamp", "answer_raw", and "answer".
+        """
+        result = {"timestamp": get_timestamp()}
+
+        # Construct the messages.
+        # Adjust the format if the Together API expects a different structure.
+        messages = [
+            {"role": "system", "content": prompt_system},
+            {"role": "user", "content": prompt_base},
+        ]
+
+        time.sleep(0.3)  # Add a delay to avoid rate limits.
+        # Send the completion request using non-streaming mode.
+        response = self.client.chat.completions.create(
+            model=self._model_name,  # e.g., "deepseek-ai/DeepSeek-V3"
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=50,
+            repetition_penalty=1,
+            stop=["<｜end▁of▁sentence｜>"],
+            stream=False  # No streaming needed.
+        )
+
+        # Extract the raw answer.
+        # Here we assume that the response structure is similar to:
+        # {
+        #    "choices": [
+        #         {"message": {"content": "The full answer text..."}}
+        #    ]
+        # }
+        try:
+            answer_raw = response.choices[0].message.content
+        except (KeyError, IndexError):
+            answer_raw = ""
+
+        result["answer_raw"] = answer_raw
+
+        # Simple post-processing: use only the first line if there are multiple lines.
+        if "\n" in answer_raw:
+            answer_processed = answer_raw.split("\n")[0].strip()
+        else:
+            answer_processed = answer_raw.strip()
         result["answer"] = answer_processed
 
         return result
