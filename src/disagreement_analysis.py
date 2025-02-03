@@ -143,20 +143,80 @@ def save_output(disagreements, scenario_question_text, output_filename="moral_di
         print(f"[ERROR] Failed to write output CSV file: {e}")
 
 
+def find_all_model_disagreements(strong_preferences, combined_df):
+    """
+    Find scenarios where all models had strong preferences and there was disagreement.
+    
+    Args:
+        strong_preferences: Dictionary of strong preferences by scenario
+        combined_df: Combined DataFrame containing all model responses
+    
+    Returns:
+        Dictionary of scenarios where all models had strong conflicting preferences
+    """
+    total_models = combined_df['model_id'].nunique()
+    all_model_disagreements = {}
+    
+    for scenario_id, prefs in strong_preferences.items():
+        # Count total models with strong preferences for this scenario
+        models_with_strong_prefs = len(prefs.get("action1", [])) + len(prefs.get("action2", []))
+        
+        # Check if all models had strong preferences and there was disagreement
+        if (models_with_strong_prefs == total_models and 
+            prefs.get("action1") and prefs.get("action2")):
+            all_model_disagreements[scenario_id] = prefs
+    
+    return all_model_disagreements
+
+
+def save_all_model_disagreements(all_model_disagreements, folder_path, scenario_question_text):
+    """
+    Save the scenarios where all models had strong preferences with disagreement.
+    Includes the same fields as the main output: scenario_id, question_text,
+    and lists of models with their preferences for each action.
+    """
+    output_filename = os.path.join(folder_path, "all_model_disagreements.csv")
+    try:
+        output_rows = []
+        for scenario_id, prefs in all_model_disagreements.items():
+            row = {
+                "scenario_id": scenario_id,
+                "question_text": scenario_question_text.get(scenario_id, ""),
+                "models_strong_action1": "; ".join([f"{model} ({perc}%)" for model, perc in prefs.get("action1", [])]),
+                "models_strong_action2": "; ".join([f"{model} ({perc}%)" for model, perc in prefs.get("action2", [])])
+            }
+            output_rows.append(row)
+
+        output_df = pd.DataFrame(
+            output_rows,
+            columns=["scenario_id", "question_text", "models_strong_action1", "models_strong_action2"]
+        )
+        output_df.to_csv(output_filename, index=False)
+        print(f"[INFO] All-model disagreements saved to '{output_filename}'")
+    except Exception as e:
+        print(f"[ERROR] Failed to write all-model disagreements CSV file: {e}")
+
 def main():
     # Parse command-line arguments.
     parser = argparse.ArgumentParser(
         description="Analyze moral decision-making patterns across different LLMs."
     )
     parser.add_argument(
-        "folder",
+        "--data_folder",
         type=str,
         nargs='?',
-        default="C:/Users/jacks/git/moralchoice/data/responses/paper/high",
+        default="/data/responses/paper/high",
         help="Path to the folder containing CSV files with moral decision data."
     )
+    parser.add_argument(
+        "--output_filename",
+        type=str,
+        default="moral_disagreements_analysis.csv",
+        help="Filename for the output CSV file."
+    )
     args = parser.parse_args()
-    folder_path = args.folder
+    folder_path = args.data_folder
+    output_filename = os.path.join(folder_path, args.output_filename)
 
     # Step 1: Load and combine CSV files.
     combined_df, files_processed = load_csv_files(folder_path)
@@ -190,8 +250,27 @@ def main():
         print(f"  Models with strong action1: {strong_a1}")
         print(f"  Models with strong action2: {strong_a2}")
 
+    # Find scenarios where all models had strong preferences with disagreement
+    all_model_disagreements = find_all_model_disagreements(strong_preferences, combined_df)
+    print(f"\n[INFO] Scenarios where ALL models had strong preferences with disagreement: {len(all_model_disagreements)}")
+    
+    # Save all-model disagreements to a separate CSV with full details
+    save_all_model_disagreements(all_model_disagreements, folder_path, scenario_question_text)
+    
+    if all_model_disagreements:
+        print("\nDetailed analysis of scenarios with all-model disagreements:")
+        print("=" * 80)
+        for scenario_id, prefs in all_model_disagreements.items():
+            print(f"\nScenario {scenario_id}:")
+            print(f"Question: {scenario_question_text[scenario_id]}")
+            print("Strong preferences for action1:", 
+                  ", ".join([f"{model} ({perc}%)" for model, perc in prefs["action1"]]))
+            print("Strong preferences for action2:", 
+                  ", ".join([f"{model} ({perc}%)" for model, perc in prefs["action2"]]))
+            print("-" * 80)
+
     # Step 4: Save the analysis to a CSV file.
-    save_output(disagreements, scenario_question_text, output_filename="moral_disagreements_analysis.csv")
+    save_output(disagreements, scenario_question_text, output_filename=output_filename)
 
 
 if __name__ == "__main__":
