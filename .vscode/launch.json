@@ -1,0 +1,176 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Evaluate Controversial Haiku",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "controversial",
+                "--model", "langchain/anthropic/claude-3-5-haiku",
+                "--question-types", "ab", "repeat", "compare",
+                "--eval-nb-samples", "5"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Evaluate Controversial 4o-mini",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "controversial",
+                "--model", "langchain/openai/gpt-4o-mini",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Evaluate Controversial Llama 3",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "controversial",
+                "--model", "langchain/llamaapi/llama3.1-8b",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Evaluate Cont Llama api DSV3",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "controversial",
+                "--model", "langchain/llamaapi/deepseek-v3",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Evaluate Cont Together DSV3",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "controversial",
+                "--model", "together/deepseek-ai/DeepSeek-V3",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Evaluate All Together DSV3",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "high",
+                "--model", "together/deepseek-ai/DeepSeek-V3",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Evaluate All Together Llama3.1",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "high",
+                "--model", "together/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo-128K",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Eval Cont Together Llama3.3",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "controversial",
+                "--model", "langchain/together/llama3.3-70b",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Eval Cont Together Llama3.2",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "controversial",
+                "--model", "langchain/together/llama3.2-3b",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Eval All Gemini 1.5F8b",
+            "type": "python",
+            "request": "launch",
+            "module": "src.evaluate",
+            "args": [
+                "--dataset", "high",
+                "--model", "langchain/google/gemini-1.5-flash-8b",
+                "--question-types", "ab",
+                "--eval-nb-samples", "1"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Collect Data Cont",
+            "type": "python",
+            "request": "launch",
+            "module": "src.collect",
+            "args": [
+                "--dataset", "controversial",
+            ]
+
+        },
+        {
+            "name": "Collect Data All",
+            "type": "python",
+            "request": "launch",
+            "module": "src.collect",
+            "args": [
+                "--dataset", "high",
+            ]
+
+        },
+        {
+            "name": "Make Graphs",
+            "type": "python",
+            "request": "launch",
+            "module": "src.bar_charts",
+            "args": [
+                "--data_folder", "data/responses/test/controversial",
+            ]
+
+        },
+        {
+            "name": "Analyze Dis. All",
+            "type": "python",
+            "request": "launch",
+            "module": "src.disagreement_analysis",
+            "args": [
+                "--data_folder", "data/responses/test/high",
+                "--output_filename", "disagreement_analysis.csv",
+            ]
+
+        }
+    ]
+}
